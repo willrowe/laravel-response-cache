@@ -1,4 +1,6 @@
-<?php namespace Wowe\Cache\Route;
+<?php
+
+namespace Wowe\Cache\Route;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Http\Request;
@@ -6,6 +8,8 @@ use Carbon\Carbon;
 
 class RouteCacheServiceProvider extends ServiceProvider
 {
+    const VENDOR = 'wowe';
+    const PACKAGE = 'route-cache';
     /**
      * Indicates if loading of the provider is deferred.
      *
@@ -21,9 +25,11 @@ class RouteCacheServiceProvider extends ServiceProvider
      */
     public function register()
     {
+        // Register the config file
+        $this->app['config']->package(implode('/', [self::VENDOR, self::PACKAGE]), $this->guessPackagePath() . '/src/config');
+
         $this->app->before(function ($request) {
-           // If the request type is GET and the requested format is HTML
-            if ($request->method() === 'GET') { // && $request->format() === 'html') {
+            if ($this->getConfig('cache-all') && $request->method() === 'GET') {
                 if (!$request->headers->hasCacheControlDirective('no-cache')) {
                     if ($this->app['cache']->has($this->getCacheKey($request))) {
                         return '';
@@ -33,13 +39,12 @@ class RouteCacheServiceProvider extends ServiceProvider
         });
 
         $this->app->after(function ($request, $response) {
-            // If the request type was GET, the request format was HTML and the response is a HTML document
-            if ($request->method() === 'GET') { // && $request->format() === 'html' && preg_match('/^text\/html;.*/', $response->headers->get('Content-Type'))) {
+            if ($this->getConfig('cache-all') && $request->method() === 'GET') {
                 $cacheKey = $this->getCacheKey($request);
                 if ($request->headers->hasCacheControlDirective('no-cache') && $this->app['cache']->has($cacheKey)) {
                     $this->app['cache']->forget($cacheKey);
                 }
-                list($lastModified, $content) = $this->app['cache']->remember($cacheKey, (7 * 24 * 60), function () use ($response) {
+                list($lastModified, $content) = $this->app['cache']->remember($cacheKey, $this->getConfig('default-life'), function () use ($response) {
                     return [Carbon::now(), $response->getContent()];
                 });
                 $response->setContent($content);
@@ -52,11 +57,26 @@ class RouteCacheServiceProvider extends ServiceProvider
             }
         });
     }
-
+    /**
+     * Generate a cache key, properly namespaced.
+     * @param  Illuminate\Http\Request $request
+     * @return  string
+     */
     public function getCacheKey(Request $request)
     {
-        return 'wowe.route-cache.' . md5($request->url());
+        return implode('.', [self::VENDOR, self::PACKAGE, md5($request->url())]);
     }
+
+    /**
+     * Get the configuration value for this package
+     * @param string $name The name of the configuration value to retrieve
+     * @return mixed
+     */
+    protected function getConfig($name)
+    {
+        return $this->app['config']->get(self::PACKAGE . '::' . $name);
+    }
+
     /**
      * Get the services provided by the provider.
      *
