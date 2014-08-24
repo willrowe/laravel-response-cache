@@ -20,5 +20,5 @@ return [
     | A value of false will cache no responses by default (exclusive mode)
     | Default: false
     */
-    'cache-all' => false
+    'cache-all' => true
 ];
