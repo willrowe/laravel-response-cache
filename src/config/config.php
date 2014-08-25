@@ -6,9 +6,11 @@ return [
     |--------------------------------------------------------------------------
     |
     | The number of minutes to cache the route responses.
+    | Only applies to routes which do not have cache
+    | life set in their action.
     | Default: 10080 minutes (1 week)
     */
-    'default-life' => (7 * 24 * 60),
+    'life' => (7 * 24 * 60),
 
     /*
     |--------------------------------------------------------------------------
@@ -20,5 +22,5 @@ return [
     | A value of false will cache no responses by default (exclusive mode)
     | Default: false
     */
-    'cache-all' => true
+    'global' => true
 ];

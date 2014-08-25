@@ -41,23 +41,6 @@ class RouteCacheServiceProvider extends ServiceProvider
     }
 
     /**
-     * Registers the filters for the beginning and end of routing and applies them
-     *
-     * @param Illuminate\Routing\Route $route
-     * 
-     * @return void
-     */
-    public function registerRouteFilters(Route $route)
-    {
-        $beforeFilterName = $this->getFullPackageName('request', '.');
-        $afterFilterName = $this->getFullPackageName('response', '.');
-        $this->app['router']->filter($beforeFilterName, [$this, 'routeBeforeCallback']);
-        $this->app['router']->filter($afterFilterName, [$this, 'routeAfterCallback']);
-        $route->before($beforeFilterName);
-        $route->after($afterFilterName);
-    }
-
-    /**
      * Registers the matched callback on the router.
      * 
      * @param  Illuminate\Router\Route   $route
@@ -67,9 +50,26 @@ class RouteCacheServiceProvider extends ServiceProvider
      */
     public function routerMatchedCallback(Route $route, Request $request)
     {
-        if ($this->config('cache-all') && $request->method() === 'GET') {
+        if ($this->routeShouldBeCached($route, $request)) {
             $this->registerRouteFilters($route);
         }
+    }
+
+    /**
+     * Registers the filters for the beginning and end of routing and applies them
+     *
+     * @param Illuminate\Routing\Route $route
+     * 
+     * @return void
+     */
+    protected function registerRouteFilters(Route $route)
+    {
+        $beforeFilterName = $this->getFullPackageName('request', '.');
+        $afterFilterName = $this->getFullPackageName('response', '.');
+        $this->app['router']->filter($beforeFilterName, [$this, 'routeBeforeCallback']);
+        $this->app['router']->filter($afterFilterName, [$this, 'routeAfterCallback']);
+        $route->before($beforeFilterName);
+        $route->after($afterFilterName);
     }
 
     /**
@@ -82,7 +82,7 @@ class RouteCacheServiceProvider extends ServiceProvider
      */
     public function routeBeforeCallback(Route $route, Request $request)
     {
-        if ($this->respondingWithCached($route, $request)) {
+        if ($this->respondsWithCached($route, $request)) {
             return '';
         }
     }
@@ -102,7 +102,7 @@ class RouteCacheServiceProvider extends ServiceProvider
         if ($this->requestedNoCache($request) && $this->routeIsCached($route)) {
             $this->app['cache']->forget($cacheKey);
         }
-        list($lastModified, $content) = $this->app['cache']->remember($cacheKey, $this->config('default-life'), function () use ($response) {
+        list($lastModified, $content) = $this->app['cache']->remember($cacheKey, $this->config('life'), function () use ($response) {
             return [Carbon::now(), $response->getContent()];
         });
         $response->setContent($content);
@@ -113,6 +113,56 @@ class RouteCacheServiceProvider extends ServiceProvider
         }
         return $response;
     }
+    
+    /**
+     * Whether the route meets the configuration (and other) criteria to be cached.
+     * @param  Illuminate\Routing\Route $route
+     * @param  Illuminate\Http\Request $request
+     * @return boolean
+     */
+    public function routeShouldBeCached(Route $route, Request $request)
+    {
+        // HTTP Method
+        if ($request->method() !== 'GET') {
+            return false;
+        }
+        $routeCacheAction = $this->getRouteCacheAction($route);
+        return is_null($routeCacheAction) ? $this->config('global') : $routeCacheAction;
+    }
+
+    /**
+     * Gets the cache action set on the route.
+     * 
+     * @param Illuminate\Routing\Route $route
+     * 
+     * @return boolean|null Returns null if no cache action was set.
+     */
+    public function getRouteCacheAction(Route $route)
+    {
+        $routeAction = $route->getAction();
+        if (isset($routeAction['cache'])) {
+            return $routeAction['cache'];
+        }
+        return $this->resolveKeylessCacheAction($routeAction);
+    }
+
+    /**
+     * Searches the action array for the 'cache' or 'no-cache' directives.
+     * 
+     * @param array $routeAction
+     * 
+     * @return boolean|null Returns null if no cache directive is found.
+     */
+    protected function resolveKeylessCacheAction(array $routeAction)
+    {
+        if (in_array('cache', $routeAction)) {
+            return true;
+        }
+        if (in_array('no-cache', $routeAction)) {
+            return false;
+        }
+        return null;
+    }
 
     /**
      * Whether the response will be from the cache.
@@ -122,7 +172,7 @@ class RouteCacheServiceProvider extends ServiceProvider
      * 
      * @return boolean
      */
-    public function respondingWithCached(Route $route, Request $request)
+    public function respondsWithCached(Route $route, Request $request)
     {
         return (!$this->requestedNoCache($request) && $this->routeIsCached($route));
     }
@@ -191,7 +241,7 @@ class RouteCacheServiceProvider extends ServiceProvider
      * @param string $settingName The name of the configuration value to retrieve
      * @return mixed
      */
-    protected function config($settingName)
+    public function config($settingName)
     {
         if (is_null($this->config)) {
             $this->config = $this->app['config']->get(self::PACKAGE . '::config');
