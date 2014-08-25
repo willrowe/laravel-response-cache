@@ -59,6 +59,7 @@ class RouteCacheServiceProvider extends ServiceProvider
 
     /**
      * Registers the matched callback on the router.
+     * 
      * @param  Illuminate\Router\Route   $route
      * @param  Illuminate\Http\Request $request
      * 
@@ -81,7 +82,7 @@ class RouteCacheServiceProvider extends ServiceProvider
      */
     public function routeBeforeCallback(Route $route, Request $request)
     {
-        if (!$request->headers->hasCacheControlDirective('no-cache') && $this->app['cache']->has($this->getCacheKey($route))) {
+        if ($this->respondingWithCached($route, $request)) {
             return '';
         }
     }
@@ -98,7 +99,7 @@ class RouteCacheServiceProvider extends ServiceProvider
     public function routeAfterCallback(Route $route, Request $request, Response $response)
     {
         $cacheKey = $this->getCacheKey($route);
-        if ($request->headers->hasCacheControlDirective('no-cache') && $this->app['cache']->has($cacheKey)) {
+        if ($this->requestedNoCache($request) && $this->routeIsCached($route)) {
             $this->app['cache']->forget($cacheKey);
         }
         list($lastModified, $content) = $this->app['cache']->remember($cacheKey, $this->config('default-life'), function () use ($response) {
@@ -111,6 +112,43 @@ class RouteCacheServiceProvider extends ServiceProvider
             $response->setNotModified();
         }
         return $response;
+    }
+
+    /**
+     * Whether the response will be from the cache.
+     * @param Illuminate\Routing\Route $route
+     * 
+     * @param Illuminate\Http\Request $request
+     * 
+     * @return boolean
+     */
+    public function respondingWithCached(Route $route, Request $request)
+    {
+        return (!$this->requestedNoCache($request) && $this->routeIsCached($route));
+    }
+
+    /**
+     * Whether the request had a 'no-cache' header
+     * 
+     * @param Illuminate\Http\Request $request
+     * 
+     * @return boolean
+     */
+    public function requestedNoCache(Request $request)
+    {
+        return $request->headers->hasCacheControlDirective('no-cache');
+    }
+
+    /**
+     * Whether or not the route is already stored in the cache.
+     * 
+     * @param Illuminate\Routing\Route $route
+     * 
+     * @return boolean
+     */
+    public function routeIsCached(Route $route)
+    {
+        return $this->app['cache']->has($this->getCacheKey($route));
     }
 
     /**
