@@ -15,14 +15,14 @@ class RouteCacheServiceProvider extends ServiceProvider
 
     /**
      * Indicates if loading of the provider is deferred.
-     *
+     * 
      * @var bool
      */
     protected $defer = false;
 
     /**
      * The configuration settings for this package.
-     *
+     * 
      * @var array
      */
     protected $config = null;
@@ -102,7 +102,7 @@ class RouteCacheServiceProvider extends ServiceProvider
         if ($this->requestedNoCache($request) && $this->routeIsCached($route)) {
             $this->app['cache']->forget($cacheKey);
         }
-        list($lastModified, $content) = $this->app['cache']->remember($cacheKey, $this->config('life'), function () use ($response) {
+        list($lastModified, $content) = $this->app['cache']->remember($cacheKey, $this->getRouteCacheLife($route), function () use ($response) {
             return [Carbon::now(), $response->getContent()];
         });
         $response->setContent($content);
@@ -116,8 +116,10 @@ class RouteCacheServiceProvider extends ServiceProvider
     
     /**
      * Whether the route meets the configuration (and other) criteria to be cached.
-     * @param  Illuminate\Routing\Route $route
-     * @param  Illuminate\Http\Request $request
+     * 
+     * @param Illuminate\Routing\Route $route
+     * @param Illuminate\Http\Request $request
+     * 
      * @return boolean
      */
     public function routeShouldBeCached(Route $route, Request $request)
@@ -126,8 +128,29 @@ class RouteCacheServiceProvider extends ServiceProvider
         if ($request->method() !== 'GET') {
             return false;
         }
-        $routeCacheAction = $this->getRouteCacheAction($route);
-        return is_null($routeCacheAction) ? $this->config('global') : $routeCacheAction;
+        return $this->routeCacheEnabled($route);
+    }
+
+    /**
+     * Whether the route is set to be cached.
+     * Route cache action will override any global setting.
+     * 
+     * @param Illuminate\Routing\Route $route
+     * 
+     * @return boolean
+     */
+    public function routeCacheEnabled(Route $route)
+    {
+        $routeActionCacheValue = $this->getRouteActionCacheValue($route);
+        
+        if (is_null($routeActionCacheValue)) {
+            return $this->config('global');
+        }
+        if (is_int($routeActionCacheValue)) {
+            return true;
+        }
+        
+        return $routeActionCacheValue;
     }
 
     /**
@@ -135,9 +158,9 @@ class RouteCacheServiceProvider extends ServiceProvider
      * 
      * @param Illuminate\Routing\Route $route
      * 
-     * @return boolean|null Returns null if no cache action was set.
+     * @return boolean|integer|null Returns null if no cache action was set.
      */
-    public function getRouteCacheAction(Route $route)
+    public function getRouteActionCacheValue(Route $route)
     {
         $routeAction = $route->getAction();
         if (isset($routeAction['cache'])) {
@@ -166,8 +189,8 @@ class RouteCacheServiceProvider extends ServiceProvider
 
     /**
      * Whether the response will be from the cache.
-     * @param Illuminate\Routing\Route $route
      * 
+     * @param Illuminate\Routing\Route $route
      * @param Illuminate\Http\Request $request
      * 
      * @return boolean
@@ -203,9 +226,9 @@ class RouteCacheServiceProvider extends ServiceProvider
 
     /**
      * The absolute path to the package.
-     *
+     * 
      * @param string $append A path to be appended on to the end of the path
-     *
+     * 
      * @return string
      */
     public function getPackagePath($append = null)
@@ -216,8 +239,10 @@ class RouteCacheServiceProvider extends ServiceProvider
 
     /**
      * Returns the vendor and package name.
+     * 
      * @param string $separator
      * @param string|array $append Any additional sections to append
+     * 
      * @return string
      */
     public function getFullPackageName($append = null, $separator = '/')
@@ -227,7 +252,9 @@ class RouteCacheServiceProvider extends ServiceProvider
 
     /**
      * Generate a cache key, properly namespaced.
+     * 
      * @param Illuminate\Routing\Route $route
+     * 
      * @return string
      */
     public function getCacheKey(Route $route)
@@ -238,7 +265,9 @@ class RouteCacheServiceProvider extends ServiceProvider
 
     /**
      * Get the configuration value for this package
+     * 
      * @param string $settingName The name of the configuration value to retrieve
+     * 
      * @return mixed
      */
     public function config($settingName)
@@ -250,8 +279,22 @@ class RouteCacheServiceProvider extends ServiceProvider
     }
 
     /**
+     * Get the length of time the route should be cached for.
+     * Route cache action value will override any global settings.
+     * 
+     * @param Illuminate\Routing\Route $route
+     * 
+     * @return integer|null
+     */
+    public function getRouteCacheLife(Route $route)
+    {
+        $routeActionCacheValue = $this->getRouteActionCacheValue($route);
+        return is_int($routeActionCacheValue) ? $routeActionCacheValue : $this->config('life');
+    }
+
+    /**
      * Get the services provided by the provider.
-     *
+     * 
      * @return array
      */
     public function provides()
