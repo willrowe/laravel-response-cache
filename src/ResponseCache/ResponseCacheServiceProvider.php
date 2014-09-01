@@ -1,6 +1,6 @@
 <?php
 
-namespace Wowe\Cache\Route;
+namespace Wowe\Cache;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Routing\Route;
@@ -8,10 +8,10 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Carbon\Carbon;
 
-class RouteCacheServiceProvider extends ServiceProvider
+class ResponseCacheServiceProvider extends ServiceProvider
 {
     const VENDOR = 'wowe';
-    const PACKAGE = 'route-cache';
+    const PACKAGE = 'response-cache';
 
     /**
      * Indicates if loading of the provider is deferred.
@@ -50,7 +50,7 @@ class RouteCacheServiceProvider extends ServiceProvider
      */
     public function routerMatchedCallback(Route $route, Request $request)
     {
-        if ($this->routeShouldBeCached($route, $request)) {
+        if ($this->responseShouldBeCached($route, $request)) {
             $this->registerRouteFilters($route);
         }
     }
@@ -82,7 +82,7 @@ class RouteCacheServiceProvider extends ServiceProvider
      */
     public function routeBeforeCallback(Route $route, Request $request)
     {
-        if ($this->respondsWithCached($route, $request)) {
+        if (!$this->freshResponseRequested($request) && $this->routeResponseIsCached($route)) {
             return '';
         }
     }
@@ -99,10 +99,10 @@ class RouteCacheServiceProvider extends ServiceProvider
     public function routeAfterCallback(Route $route, Request $request, Response $response)
     {
         $cacheKey = $this->getCacheKey($route);
-        if ($this->requestedNoCache($request) && $this->routeIsCached($route)) {
+        if ($this->freshResponseRequested($request) && $this->routeResponseIsCached($route)) {
             $this->app['cache']->forget($cacheKey);
         }
-        list($lastModified, $content) = $this->app['cache']->remember($cacheKey, $this->getRouteCacheLife($route), function () use ($response) {
+        list($lastModified, $content) = $this->app['cache']->remember($cacheKey, $this->getCacheLife($route), function () use ($response) {
             return [Carbon::now(), $response->getContent()];
         });
         $response->setContent($content);
@@ -122,24 +122,25 @@ class RouteCacheServiceProvider extends ServiceProvider
      * 
      * @return boolean
      */
-    public function routeShouldBeCached(Route $route, Request $request)
+    public function responseShouldBeCached(Route $route, Request $request)
     {
         // HTTP Method
         if ($request->method() !== 'GET') {
             return false;
         }
-        return $this->routeCacheEnabled($route);
+        // Configuration settings
+        return $this->cacheEnabled($route);
     }
 
     /**
-     * Whether the route is set to be cached.
+     * Whether the route response is set to be cached.
      * Route cache action will override any global setting.
      * 
      * @param Illuminate\Routing\Route $route
      * 
      * @return boolean
      */
-    public function routeCacheEnabled(Route $route)
+    public function cacheEnabled(Route $route)
     {
         $routeActionCacheValue = $this->getRouteActionCacheValue($route);
         
@@ -188,38 +189,25 @@ class RouteCacheServiceProvider extends ServiceProvider
     }
 
     /**
-     * Whether the response will be from the cache.
-     * 
-     * @param Illuminate\Routing\Route $route
-     * @param Illuminate\Http\Request $request
-     * 
-     * @return boolean
-     */
-    public function respondsWithCached(Route $route, Request $request)
-    {
-        return (!$this->requestedNoCache($request) && $this->routeIsCached($route));
-    }
-
-    /**
      * Whether the request had a 'no-cache' header
      * 
      * @param Illuminate\Http\Request $request
      * 
      * @return boolean
      */
-    public function requestedNoCache(Request $request)
+    public function freshResponseRequested(Request $request)
     {
         return $request->headers->hasCacheControlDirective('no-cache');
     }
 
     /**
-     * Whether or not the route is already stored in the cache.
+     * Whether or not the route response is already stored in the cache.
      * 
      * @param Illuminate\Routing\Route $route
      * 
      * @return boolean
      */
-    public function routeIsCached(Route $route)
+    public function routeResponseIsCached(Route $route)
     {
         return $this->app['cache']->has($this->getCacheKey($route));
     }
@@ -264,9 +252,9 @@ class RouteCacheServiceProvider extends ServiceProvider
     }
 
     /**
-     * Get the configuration value for this package
+     * Get a configuration setting for this package
      * 
-     * @param string $settingName The name of the configuration value to retrieve
+     * @param string $settingName The name of the configuration setting to retrieve
      * 
      * @return mixed
      */
@@ -286,7 +274,7 @@ class RouteCacheServiceProvider extends ServiceProvider
      * 
      * @return integer|null
      */
-    public function getRouteCacheLife(Route $route)
+    public function getCacheLife(Route $route)
     {
         $routeActionCacheValue = $this->getRouteActionCacheValue($route);
         return is_int($routeActionCacheValue) ? $routeActionCacheValue : $this->config('life');
