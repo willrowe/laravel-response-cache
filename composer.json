@@ -13,6 +13,9 @@
         "illuminate/http": "4.2.*",
         "nesbot/carbon": "~1.0"
     },
+    "require-dev": {
+        "orchestra/testbench": "2.2.*"
+    },
     "autoload": {
         "classmap": [],
         "psr-4": {
