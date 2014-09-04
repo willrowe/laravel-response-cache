@@ -19,7 +19,7 @@
     "autoload": {
         "classmap": [],
         "psr-4": {
-            "Wowe\\Cache\\": "src/ResponseCache"
+            "Wowe\\Cache\\Response\\": "src/ResponseCache"
         }
     },
     "minimum-stability": "stable"
