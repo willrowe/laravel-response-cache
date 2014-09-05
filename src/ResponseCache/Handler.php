@@ -10,13 +10,6 @@ use Illuminate\Foundation\Application;
 class Handler
 {
     /**
-     * The configuration settings for this package.
-     * 
-     * @var array
-     */
-    protected static $config = null;
-
-    /**
      * All the handler instances.
      * @var array
      */
@@ -26,25 +19,31 @@ class Handler
      * The prefix for all cache keys
      * @var string
      */
-    public static $cacheKeyPrefix;
+    protected static $cacheKeyPrefix;
 
     /**
      * The name of the before filter
      * @var string
      */
-    public static $beforeFilterName;
+    protected static $beforeFilterName;
 
     /**
      * The name of the after filter
      * @var string
      */
-    public static $afterFilterName;
+    protected static $afterFilterName;
 
     /**
      * The application instance.
      * @var \Illuminate\Foundation\Application
      */
-    public static $app;
+    protected static $app;
+
+    /**
+     * The configuration settings for this package.
+     * @var array
+     */
+    protected static $config;
 
     /**
      * The route being cached.
@@ -64,6 +63,15 @@ class Handler
      */
     protected $cacheKey;
 
+    public static function setProperties(array $properties)
+    {
+        self::$app = $properties['app'];
+        self::$config = $properties['config'];
+        self::$cacheKeyPrefix = $properties['cacheKeyPrefix'];
+        self::$beforeFilterName = $properties['beforeFilterName'];
+        self::$afterFilterName = $properties['afterFilterName'];
+    }
+
     /**
      * Get a configuration setting for this package
      * @param string $settingName The name of the configuration setting to retrieve
@@ -71,9 +79,6 @@ class Handler
      */
     public static function config($settingName)
     {
-        if (is_null(self::$config)) {
-            self::$config = self::$app['config']->get('response-cache::config');
-        }
         return self::$config[$settingName];
     }
 
@@ -222,7 +227,7 @@ class Handler
      * @param \Illuminate\Routing\Route $route
      * @param \Illuminate\Http\Request $request
      */
-    public function __construct(Route $route, Request $request)
+    private function __construct(Route $route, Request $request)
     {
         $this->route = $route;
         $this->request = $request;

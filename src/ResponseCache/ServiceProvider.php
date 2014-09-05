@@ -43,29 +43,25 @@ class ServiceProvider extends IlluminateServiceProvider
     }
 
     /**
-     * Returns a new instance of the service provider.
-     */
-    public function __construct($app)
-    {
-        parent::__construct($app);
-        $this->beforeFilterName = self::getFullPackageName('request', '.');
-        $this->afterFilterName = self::getFullPackageName('response', '.');
-    }
-
-    /**
      * Register the service provider.
      * @return void
      */
     public function register()
     {
+        $this->beforeFilterName = self::getFullPackageName('request', '.');
+        $this->afterFilterName = self::getFullPackageName('response', '.');
+
         // Register the config file
         $this->app['config']->package(self::getFullPackageName(), $this->getPackagePath('config'));
 
         // Set the handler properties
-        Handler::$app = $this->app;
-        Handler::$cacheKeyPrefix = self::getFullPackageName(null, '.');
-        Handler::$beforeFilterName = $this->beforeFilterName;
-        Handler::$afterFilterName = $this->afterFilterName;
+        Handler::setProperties([
+            'app' => $this->app,
+            'config' => $this->app['config']->get(self::PACKAGE . '::config'),
+            'cacheKeyPrefix' => self::getFullPackageName(null, '.'),
+            'beforeFilterName' => $this->beforeFilterName,
+            'afterFilterName' => $this->afterFilterName
+        ]);
 
         // Register the filters
         $this->app['router']->filter($this->beforeFilterName, 'Wowe\Cache\Response\BeforeFilter');
