@@ -19,31 +19,25 @@ class Handler
      * The prefix for all cache keys
      * @var string
      */
-    protected static $cacheKeyPrefix;
+    protected $cacheKeyPrefix;
 
     /**
      * The name of the before filter
      * @var string
      */
-    protected static $beforeFilterName;
+    protected $beforeFilterName;
 
     /**
      * The name of the after filter
      * @var string
      */
-    protected static $afterFilterName;
+    protected $afterFilterName;
 
     /**
      * The application instance.
      * @var \Illuminate\Foundation\Application
      */
-    protected static $app;
-
-    /**
-     * The configuration settings for this package.
-     * @var array
-     */
-    protected static $config;
+    protected $app;
 
     /**
      * The route being cached.
@@ -63,64 +57,36 @@ class Handler
      */
     protected $cacheKey;
 
-    public static function setProperties(array $properties)
-    {
-        self::$app = $properties['app'];
-        self::$config = $properties['config'];
-        self::$cacheKeyPrefix = $properties['cacheKeyPrefix'];
-        self::$beforeFilterName = $properties['beforeFilterName'];
-        self::$afterFilterName = $properties['afterFilterName'];
-    }
-
-    /**
-     * Get a configuration setting for this package
-     * @param string $settingName The name of the configuration setting to retrieve
-     * @return mixed
-     */
-    public static function config($settingName)
-    {
-        return self::$config[$settingName];
-    }
-
-    /**
-     * Generate a cache key, properly namespaced.
-     * @param \Illuminate\Routing\Route $route
-     * @return string
-     */
-    protected static function generateCacheKey(Route $route)
-    {
-        $routeHash = md5(is_null($route->getName()) ? $route->getUri(): $route->getName());
-        return implode('.', array_filter([self::$cacheKeyPrefix, $routeHash]));
-    }
-
     /**
      * Whether the route meets the configuration (and other) criteria to be cached.
+     * @param \Illuminate\Foundation\Application $app
      * @param \Illuminate\Routing\Route $route
      * @param \Illumiante\Http\Request $request
      * @return boolean
      */
-    protected static function responseCanBeCached(Route $route, Request $request)
+    protected static function responseCanBeCached(Application $app, Route $route, Request $request)
     {
         // HTTP Method
-        if ($request->method() !== 'GET') {
+        if (!in_array('GET', $route->methods(), true) || $request->method() !== 'GET') {
             return false;
         }
         // Configuration settings
-        return self::resolveCachingSetting($route);
+        return self::resolveCachingSetting($app, $route);
     }
 
     /**
      * Whether the route is set to be cached.
      * Route cache action will override any global setting.
+     * @param \Illuminate\Foundation\Application $app
      * @param \Illuminate\Routing\Route $route
      * @return boolean
      */
-    protected static function resolveCachingSetting(Route $route)
+    protected static function resolveCachingSetting(Application $app, Route $route)
     {
         $routeActionCacheValue = self::getActionCacheValue($route);
         
         if (is_null($routeActionCacheValue)) {
-            return self::config('global');
+            return ServiceProvider::config($app, 'global');
         }
         if (is_int($routeActionCacheValue)) {
             return true;
@@ -146,13 +112,14 @@ class Handler
     /**
      * Get the length of time the route should be cached for.
      * Route cache action value will override any global settings.
+     * @param \Illuminate\Foundation\Application $app
      * @param \Illuminate\Routing\Route $route
      * @return integer|null
      */
-    protected static function resolveCacheLife(Route $route)
+    protected static function resolveCacheLife(Application $app, Route $route)
     {
         $routeActionCacheValue = self::getActionCacheValue($route);
-        return is_int($routeActionCacheValue) ? $routeActionCacheValue : self::config('life');
+        return is_int($routeActionCacheValue) ? $routeActionCacheValue : ServiceProvider::config($app, 'life');
     }
 
     /**
@@ -173,14 +140,15 @@ class Handler
 
     /**
      * If the response from the route will be cached then a new instance will be created.
+     * @param \Illuminate\Foundation\Application $app
      * @param \Illuminate\Routing\Route $route
      * @param \Illuminate\Http\Request $request
      * @return void
      */
-    public static function make(Route $route, Request $request)
+    public static function make(Application $app, Route $route, Request $request)
     {
-        if (self::responseCanBeCached($route, $request)) {
-            self::$handlers[] = new static($route, $request);
+        if (self::responseCanBeCached($app, $route, $request)) {
+            self::$handlers[] = new static($app, $route, $request);
         }
     }
 
@@ -224,20 +192,46 @@ class Handler
 
     /**
      * Create a new handler
+     * @param \Illuminate\Foundation\Application $app
      * @param \Illuminate\Routing\Route $route
      * @param \Illuminate\Http\Request $request
      */
-    private function __construct(Route $route, Request $request)
+    private function __construct(Application $app, Route $route, Request $request)
     {
+        $this->cacheKeyPrefix = ServiceProvider::getFullPackageName(null, '.');
+        $this->beforeFilterName = ServiceProvider::getBeforeFilterName();
+        $this->afterFilterName = ServiceProvider::getAfterFilterName();
+
+        $this->app = $app;
         $this->route = $route;
         $this->request = $request;
 
-        $this->cacheKey = self::generateCacheKey($this->route);
-        $this->cacheLife = self::resolveCacheLife($this->route);
+        $this->generateCacheKey();
+        $this->cacheLife = self::resolveCacheLife($this->app, $this->route);
 
         $this->refreshCache();
-        $this->route->before(self::$beforeFilterName);
-        $this->route->after(self::$afterFilterName);
+        $this->route->before($this->beforeFilterName);
+        $this->route->after($this->afterFilterName);
+    }
+
+    /**
+     * Generate a cache key, properly namespaced.
+     * @return void
+     */
+    protected function generateCacheKey()
+    {
+        $routeHash = md5(is_null($this->route->getName()) ? $this->route->getUri(): $this->route->getName());
+        $this->cacheKey = implode('.', array_filter([$this->cacheKeyPrefix, $routeHash]));
+    }
+
+    /**
+     * Get a configuration setting for this package
+     * @param string $settingName The name of the configuration setting to retrieve
+     * @return mixed
+     */
+    public function config($settingName)
+    {
+        return ServiceProvider::config($this->app, $settingName);
     }
 
     /**
@@ -284,7 +278,7 @@ class Handler
     protected function refreshCache()
     {
         if ($this->request->isNoCache() && $this->responseIsCached($this->route)) {
-            self::$app['cache']->forget($this->cacheKey);
+            $this->app['cache']->forget($this->cacheKey);
         }
     }
 
@@ -296,11 +290,11 @@ class Handler
     protected function getCachedResponse(Response $response)
     {
         if ($this->responseIsCached()) {
-            return self::$app['cache']->get($this->cacheKey);
+            return $this->app['cache']->get($this->cacheKey);
         }
         
         $cachedResponse = [Carbon::now(), $response->getContent()];
-        self::$app['cache']->put($this->cacheKey, $cachedResponse, $this->cacheLife);
+        $this->app['cache']->put($this->cacheKey, $cachedResponse, $this->cacheLife);
         return $cachedResponse;
     }
 
@@ -310,6 +304,6 @@ class Handler
      */
     protected function responseIsCached()
     {
-        return self::$app['cache']->has($this->cacheKey);
+        return $this->app['cache']->has($this->cacheKey);
     }
 }

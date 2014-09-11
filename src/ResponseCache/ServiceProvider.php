@@ -12,22 +12,33 @@ class ServiceProvider extends IlluminateServiceProvider
     const PACKAGE = 'response-cache';
 
     /**
-     * Indicates if loading of the provider is deferred.
-     * @var bool
-     */
-    protected $defer = false;
-    
-    /**
      * The name to be used for the route before filter.
      * @var string
      */
-    protected $beforeFilterName;
+    protected static $beforeFilterName;
 
     /**
      * The name to be used for the route after filter.
      * @var string
      */
-    protected $afterFilterName;
+    protected static $afterFilterName;
+
+    /**
+     * Indicates if loading of the provider is deferred.
+     * @var bool
+     */
+    protected $defer = false;
+
+    /**
+     * Get a configuration setting for this package
+     * @param \Illuminate\Foundation\Application $app
+     * @param string $settingName The name of the configuration setting to retrieve
+     * @return mixed
+     */
+    public static function config($app, $settingName)
+    {
+        return $app['config']->get(self::PACKAGE . '::config.' . $settingName);
+    }
 
     /**
      * Returns the vendor and package name.
@@ -43,29 +54,38 @@ class ServiceProvider extends IlluminateServiceProvider
     }
 
     /**
+     * Returns the before filter name.
+     * @return string
+     */
+    public static function getBeforeFilterName()
+    {
+        return self::$beforeFilterName;
+    }
+
+    /**
+     * Returns the after filter name.
+     * @return string
+     */
+    public static function getAfterFilterName()
+    {
+        return self::$afterFilterName;
+    }
+
+    /**
      * Register the service provider.
      * @return void
      */
     public function register()
     {
-        $this->beforeFilterName = self::getFullPackageName('request', '.');
-        $this->afterFilterName = self::getFullPackageName('response', '.');
+        self::$beforeFilterName = self::getFullPackageName('request', '.');
+        self::$afterFilterName = self::getFullPackageName('response', '.');
 
         // Register the config file
         $this->app['config']->package(self::getFullPackageName(), $this->getPackagePath('config'));
 
-        // Set the handler properties
-        Handler::setProperties([
-            'app' => $this->app,
-            'config' => $this->app['config']->get(self::PACKAGE . '::config'),
-            'cacheKeyPrefix' => self::getFullPackageName(null, '.'),
-            'beforeFilterName' => $this->beforeFilterName,
-            'afterFilterName' => $this->afterFilterName
-        ]);
-
         // Register the filters
-        $this->app['router']->filter($this->beforeFilterName, 'Wowe\Cache\Response\BeforeFilter');
-        $this->app['router']->filter($this->afterFilterName, 'Wowe\Cache\Response\AfterFilter');
+        $this->app['router']->filter(self::$beforeFilterName, 'Wowe\Cache\Response\BeforeFilter');
+        $this->app['router']->filter(self::$afterFilterName, 'Wowe\Cache\Response\AfterFilter');
 
         // Register the 'route.matched' event
         $this->app['router']->matched(function (Route $route, Request $request) {
@@ -101,6 +121,6 @@ class ServiceProvider extends IlluminateServiceProvider
      */
     protected function routerMatchedCallback(Route $route, Request $request)
     {
-        Handler::make($route, $request);
+        Handler::make($this->app, $route, $request);
     }
 }

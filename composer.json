@@ -14,7 +14,8 @@
         "nesbot/carbon": "~1.0"
     },
     "require-dev": {
-        "orchestra/testbench": "2.2.*"
+        "orchestra/testbench": "2.2.*",
+        "mockery/mockery": "~0.9"
     },
     "autoload": {
         "classmap": [],
