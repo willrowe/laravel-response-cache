@@ -98,9 +98,8 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         if (is_null($route)) {
             $route = $this->addRoute();
         }
-        $content = null;
         
-        
+        $data = null;
         $requests = array_slice(func_get_args(), 2);
         if (is_int($numRequests)) {
             $requests = array_merge($requests, array_fill(0, $numRequests, null));
@@ -112,13 +111,29 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
             
             $request = array_merge([
                 'headers' => [],
-                'assertions' => (array)$defaultAssertions
+                'assertions' => (array)$defaultAssertions,
+                'dataCallback' => function ($request, $response) {
+                    return $response->getContent();
+                }
             ], (array)$request);
-            $response = $this->callRoute($route, $request['headers']);
+            $parsedHeaders = array_map(
+                function ($header) use ($data) {
+                    if (is_callable($header)) {
+                        return $header($data);
+                    }
+                    return $header;
+                },
+                $request['headers']
+            );
+            $response = $this->callRoute($route, $parsedHeaders);
+            
             foreach ($request['assertions'] as $assertion) {
-                call_user_func([$this, $assertion], $content);
+                call_user_func([$this, $assertion], $data);
             }
-            $content = $response->getContent();
+            
+            if ($request['dataCallback'] !== false) {
+                $data = is_callable($request['dataCallback']) ? $request['dataCallback']($request, $response) : $request['dataCallback'];
+            }
         }
     }
 
@@ -138,6 +153,16 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         if (!is_null($content)) {
             $this->assertSame($response->getContent(), $content);
         }
+
+        return $response;
+    }
+
+    protected function assertResponseCachedWithoutContent($lastModified = null)
+    {
+        $response = $this->client->getResponse();
+        $this->assertResponseStatus(304);
+        $this->assertTrue($response->headers->hasCacheControlDirective('public'));
+        $this->assertSame($response->getContent(), '');
 
         return $response;
     }
@@ -249,7 +274,34 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
 
     public function testResponseWillBeNotModifiedIfCachedAndModifiedSinceHeaderSent()
     {
-        
+        $this->setPackageConfig('global', true);
+        $this->assertRequestsForRoute(
+            null,
+            null,
+            [
+                'assertions' => ['assertResponseCachedWithContent'],
+                'dataCallback' => function ($request, $response) {
+                    return $response->headers->get('Last-Modified');
+                }
+            ],
+            [
+                'assertions' => ['assertResponseCachedWithoutContent'],
+                'headers' => [
+                    'If-Modified-Since' => function ($lastModified) {
+                        return $lastModified;
+                    }
+                ],
+                'dataCallback' => false
+            ],
+            [
+                'assertions' => ['assertResponseCachedWithoutContent'],
+                'headers' => [
+                    'If-Modified-Since' => function ($lastModified) {
+                        return $lastModified;
+                    }
+                ]
+            ]
+        );
     }
 
     public function testManuallyAddedRouteFiltersFail()
