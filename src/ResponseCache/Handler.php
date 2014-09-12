@@ -225,16 +225,6 @@ class Handler
     }
 
     /**
-     * Get a configuration setting for this package
-     * @param string $settingName The name of the configuration setting to retrieve
-     * @return mixed
-     */
-    public function config($settingName)
-    {
-        return ServiceProvider::config($this->app, $settingName);
-    }
-
-    /**
      * Whether the current instance has the same route and request.
      * @param \Illuminate\Routing\Route $route
      * @param \Illuminate\Http\Request $request
@@ -277,7 +267,7 @@ class Handler
      */
     protected function refreshCache()
     {
-        if ($this->request->isNoCache() && $this->responseIsCached($this->route)) {
+        if ($this->request->isNoCache() && $this->responseIsCached()) {
             $this->app['cache']->forget($this->cacheKey);
         }
     }

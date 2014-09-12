@@ -66,12 +66,22 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
             $route = $this->addRoute();
         }
         if (!is_null($requestHeaders)) {
-            array_map(function ($header) {
-                return 'HTTP_' . $header;
-            }, $requestHeaders);
+            $requestHeaders = array_combine(
+                array_map(
+                    function ($header) {
+                        return 'HTTP_' . $header;
+                    },
+                    array_keys($requestHeaders)
+                ),
+                array_values($requestHeaders)
+            );
         }
         return $this->call($route->methods()[0], $route->getUri(), [], [], $requestHeaders);
     }
+
+    /*************
+    * ASSERTIONS *
+    *************/
 
     protected function assertRouteResponseCached(Route $route = null)
     {
@@ -83,7 +93,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         call_user_func_array([$this, 'assertRequestsForRoute'], array_merge([$route, ['assertResponseNotCached']], array_slice(func_get_args(), 1)));
     }
 
-    protected function assertRequestsForRoute(Route $route = null, array $defaultAssertions = [], $numRequests = 2)
+    protected function assertRequestsForRoute(Route $route = null, array $defaultAssertions = null, $numRequests = 2)
     {
         if (is_null($route)) {
             $route = $this->addRoute();
@@ -102,7 +112,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
             
             $request = array_merge([
                 'headers' => [],
-                'assertions' => $defaultAssertions
+                'assertions' => (array)$defaultAssertions
             ], (array)$request);
             $response = $this->callRoute($route, $request['headers']);
             foreach ($request['assertions'] as $assertion) {
@@ -160,6 +170,10 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         return $response;
     }
 
+    /********
+    * TESTS *
+    ********/
+
     public function testGlobalConfigCachesAllResponses()
     {
         $this->setPackageConfig('global', true);
@@ -189,6 +203,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
 
     public function testLifeConfigIsUsed()
     {
+        $this->setPackageConfig('global', true);
         $life = mt_rand(1, 99999);
         $this->setPackageConfig('life', $life);
         $this->assertRouteResponseCachedFor($life);
@@ -217,6 +232,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
     {
         $this->setPackageConfig('global', true);
         $this->assertRequestsForRoute(
+            null,
             null,
             [
                 'assertions' => ['assertResponseCachedWithContent']
