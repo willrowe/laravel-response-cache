@@ -37,6 +37,15 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         $this->app['config']->set('response-cache::config.' . $settingName, $value);
     }
 
+    /**
+     * Adds a route to the application router.
+     * If no URI is passed, a unique one is generated.
+     * If no action is passed, a simple one is generated with a unique hash.
+     * @param mixed $action
+     * @param string $uri The URI to respond to
+     * @param string $method A valid HTTP verb
+     * @return \Illuminate\Router\Route
+     */
     protected function addRoute($action = [], $uri = null, $method = 'GET')
     {
         $router = $this->app['router'];
@@ -304,13 +313,11 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         );
     }
 
-    public function testManuallyAddedRouteFiltersFail()
+    public function testManuallyAddedRouteFiltersDoNotTriggerBeforeOrAfterFilters()
     {
-
-    }
-
-    public function testManuallyAddedRouteFiltersAreStripped()
-    {
-
+        $this->app->instance('Wowe\Cache\Response\BeforeFilter', Mockery::mock('Wowe\Cache\Response\BeforeFilter')->shouldReceive('filter')->never()->getMock());
+        $this->app->instance('Wowe\Cache\Response\AfterFilter', Mockery::mock('Wowe\Cache\Response\AfterFilter')->shouldReceive('filter')->never()->getMock());
+        $route = $this->addRoute(['before' => 'wowe.response-cache.request', 'after' => 'wowe.response-cache.response']);
+        $this->assertRouteResponseNotCached($route);
     }
 }

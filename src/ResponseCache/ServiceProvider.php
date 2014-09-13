@@ -71,6 +71,40 @@ class ServiceProvider extends IlluminateServiceProvider
         return self::$afterFilterName;
     }
 
+    protected static function checkFilters(Route $route)
+    {
+        if (isset($route->beforeFilters()[self::$beforeFilterName]) || isset($route->afterFilters()[self::$afterFilterName])) {
+            self::stripFilters($route);
+        }
+    }
+
+    protected static function stripFilters(Route $route)
+    {
+        $beforeFilters = $route->beforeFilters();
+        $afterFilters = $route->afterFilters();
+        $strippedAction = $route->getAction();
+        if (isset($beforeFilters[self::$beforeFilterName])) {
+            unset($beforeFilters[self::$beforeFilterName]);
+            $strippedAction['before'] = self::composeFiltersString($beforeFilters);
+        }
+        if (isset($afterFilters[self::$afterFilterName])) {
+            unset($afterFilters[self::$afterFilterName]);
+            $strippedAction['after'] = self::composeFiltersString($afterFilters);
+        }
+        $route->setAction($strippedAction);
+    }
+
+    protected static function composeFiltersString(array $filters)
+    {
+        foreach ($filters as $filter => $value) {
+            if (is_array($value)) {
+                $value = implode(',', $value);
+            }
+            $filters[$filter] = implode(':', array_filter([$filter, $value]));
+        }
+        return implode('|', $filters);
+    }
+
     /**
      * Register the service provider.
      * @return void
@@ -87,7 +121,7 @@ class ServiceProvider extends IlluminateServiceProvider
         $this->app['router']->filter(self::$beforeFilterName, 'Wowe\Cache\Response\BeforeFilter');
         $this->app['router']->filter(self::$afterFilterName, 'Wowe\Cache\Response\AfterFilter');
 
-        // Register the 'route.matched' event
+        // Register the 'router.matched' event
         $this->app['router']->matched(function (Route $route, Request $request) {
             $this->routerMatchedCallback($route, $request);
         });
@@ -121,6 +155,7 @@ class ServiceProvider extends IlluminateServiceProvider
      */
     protected function routerMatchedCallback(Route $route, Request $request)
     {
+        self::checkFilters($route);
         Handler::make($this->app, $route, $request);
     }
 }
