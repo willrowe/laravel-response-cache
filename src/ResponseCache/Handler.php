@@ -58,13 +58,13 @@ class Handler
     protected $cacheKey;
 
     /**
-     * Whether the route meets the configuration (and other) criteria to be cached.
+     * Whether the route and request meet the criteria to be cached.
      * @param \Illuminate\Foundation\Application $app
      * @param \Illuminate\Routing\Route $route
      * @param \Illumiante\Http\Request $request
      * @return boolean
      */
-    protected static function responseCanBeCached(Application $app, Route $route, Request $request)
+    protected static function routeRequestIsCacheable(Application $app, Route $route, Request $request)
     {
         // HTTP Method
         if (!in_array('GET', $route->methods(), true) || $request->method() !== 'GET') {
@@ -139,6 +139,20 @@ class Handler
     }
 
     /**
+     * Whether the response meets the criteria to be cached
+     * @param  \Illuminate\Http\Response $response
+     * @return boolean
+     */
+    protected static function responseIsCacheable(Response $response)
+    {
+        if ($response->getStatusCode() !== 200) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
      * If the response from the route will be cached then a new instance will be created.
      * @param \Illuminate\Foundation\Application $app
      * @param \Illuminate\Routing\Route $route
@@ -147,7 +161,7 @@ class Handler
      */
     public static function make(Application $app, Route $route, Request $request)
     {
-        if (self::responseCanBeCached($app, $route, $request)) {
+        if (self::routeRequestIsCacheable($app, $route, $request)) {
             self::$handlers[] = new static($app, $route, $request);
         }
     }
@@ -253,6 +267,9 @@ class Handler
      */
     public function afterCallback(Response $response)
     {
+        if (!self::responseIsCacheable($response)) {
+            return $response;
+        }
         list($lastModified, $content) = $this->getCachedResponse($response);
         $response->setContent($content);
         $response->setLastModified($lastModified);

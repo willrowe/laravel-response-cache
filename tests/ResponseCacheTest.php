@@ -1,5 +1,6 @@
 <?php
 use Illuminate\Routing\Route;
+use Illuminate\Support\Facades\Response as ResponseFacade;
 use Illuminate\Http\Response;
 use \Mockery;
 
@@ -38,12 +39,30 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
     }
 
     /**
+     * Returns a unique hash
+     * @return string
+     */
+    protected function generateUniqueHash()
+    {
+        return md5(time() . ++$this->callCount);
+    }
+
+    /**
+     * Returns a unique URI
+     * @return string
+     */
+    protected function generateUniqueUri()
+    {
+        return md5('route' . ++$this->routeCount);
+    }
+
+    /**
      * Adds a route to the application router.
      * If no URI is passed, a unique one is generated.
      * If no action is passed, a simple one is generated with a unique hash.
      * @param mixed $action
      * @param string $uri The URI to respond to
-     * @param string $method A valid HTTP verb
+     * @param string|array $method A valid HTTP verb or a list of valid HTTP verbs
      * @return \Illuminate\Router\Route
      */
     protected function addRoute($action = [], $uri = null, $method = 'GET')
@@ -52,64 +71,70 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
 
         if (!is_callable($action) && count(array_filter($action, 'is_callable')) == 0) {
             $action[] = function () {
-                return md5(time() . ++$this->callCount);
+                return $this->generateUniqueHash();
             };
         }
 
         if (is_null($uri)) {
-            $uri = md5('route' . ++$this->routeCount);
+            $uri = $this->generateUniqueUri();
         }
-        if (in_array($method, $router::$verbs)) {
-            return call_user_func([$router, strtolower($method)], $uri, $action);
-        }
+
+        return $router->match((array)$method, $uri, $action);
     }
 
     /**
      * Call the passed route and returns the response
-     * @param \Illuminate\Routing\Route $route
+     * @param  \Illuminate\Routing\Route $route
+     * @param  array                     $requestHeaders
+     * @param  array                     $parameters
      * @return \Illuminate\Http\Response
      */
-    protected function callRoute(Route $route = null, array $requestHeaders = [])
+    protected function callRoute(Route $route = null, array $requestHeaders = null, array $parameters = null)
     {
         if (is_null($route)) {
             $route = $this->addRoute();
         }
-        if (!is_null($requestHeaders)) {
-            $requestHeaders = array_combine(
-                array_map(
-                    function ($header) {
-                        return 'HTTP_' . $header;
-                    },
-                    array_keys($requestHeaders)
-                ),
-                array_values($requestHeaders)
-            );
+        if (is_null($parameters)) {
+            $parameters = [];
         }
-        return $this->call($route->methods()[0], $route->getUri(), [], [], $requestHeaders);
+        if (is_null($requestHeaders)) {
+            $requestHeaders = [];
+        }
+        $requestHeaders = array_combine(
+            array_map(
+                function ($header) {
+                    return 'HTTP_' . $header;
+                },
+                array_keys($requestHeaders)
+            ),
+            array_values($requestHeaders)
+        );
+        
+        return $this->call($route->methods()[0], $this->app['url']->route(null, $parameters, true, $route), $parameters, [], $requestHeaders);
     }
 
     /*************
     * ASSERTIONS *
     *************/
 
-    protected function assertRouteResponseCached(Route $route = null)
+    protected function assertRouteResponseCached(Route $route = null, array $parameters = null)
     {
-        call_user_func_array([$this, 'assertRequestsForRoute'], array_merge([$route, ['assertResponseCachedWithContent']], array_slice(func_get_args(), 1)));
+        call_user_func_array([$this, 'assertRequestsForRoute'], array_merge([$route, ['assertResponseCachedWithContent'], $parameters], array_slice(func_get_args(), 2)));
     }
 
-    protected function assertRouteResponseNotCached(Route $route = null)
+    protected function assertRouteResponseNotCached(Route $route = null, array $parameters = null)
     {
-        call_user_func_array([$this, 'assertRequestsForRoute'], array_merge([$route, ['assertResponseNotCached']], array_slice(func_get_args(), 1)));
+        call_user_func_array([$this, 'assertRequestsForRoute'], array_merge([$route, ['assertResponseNotCached'], $parameters], array_slice(func_get_args(), 2)));
     }
 
-    protected function assertRequestsForRoute(Route $route = null, array $defaultAssertions = null, $numRequests = 2)
+    protected function assertRequestsForRoute(Route $route = null, array $defaultAssertions = null, array $parameters = null, $numRequests = 2)
     {
         if (is_null($route)) {
             $route = $this->addRoute();
         }
-        
+
         $data = null;
-        $requests = array_slice(func_get_args(), 2);
+        $requests = array_slice(func_get_args(), 3);
         if (is_int($numRequests)) {
             $requests = array_merge($requests, array_fill(0, $numRequests, null));
         }
@@ -134,9 +159,9 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
                 },
                 $request['headers']
             );
-            $response = $this->callRoute($route, $parsedHeaders);
+            $response = $this->callRoute($route, $parsedHeaders, $parameters);
             
-            foreach ($request['assertions'] as $assertion) {
+            foreach ((array)$request['assertions'] as $assertion) {
                 call_user_func([$this, $assertion], $data);
             }
             
@@ -156,9 +181,9 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
     protected function assertResponseCachedWithContent($content = null)
     {
         $response = $this->client->getResponse();
-        $this->assertResponseOk();
-        $this->assertTrue($response->headers->hasCacheControlDirective('public'));
-        $this->assertTrue($response->headers->has('Last-Modified'));
+        $this->assertResponseStatus(isset($_SERVER['__STATUS_CODE']) ? $_SERVER['__STATUS_CODE'] : 200);
+        $this->assertTrue($response->headers->hasCacheControlDirective('public'), 'Public cache control directive not found.');
+        $this->assertTrue($response->headers->has('Last-Modified'), 'Last modified header was not found.');
         if (!is_null($content)) {
             $this->assertSame($response->getContent(), $content);
         }
@@ -179,11 +204,11 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
     protected function assertResponseNotCached($content = null)
     {
         $response = $this->client->getResponse();
-        $this->assertResponseOk();
-        $this->assertFalse($response->headers->hasCacheControlDirective('public'));
-        $this->assertFalse($response->headers->has('Last-Modified'));
+        $this->assertResponseStatus(isset($_SERVER['__STATUS_CODE']) ? $_SERVER['__STATUS_CODE'] : 200);
+        $this->assertFalse($response->headers->hasCacheControlDirective('public'), 'Failed to assert that the public cache control directive was not present.');
+        $this->assertFalse($response->headers->has('Last-Modified'), 'Failed to assert that the last modified header was not present.');
 
-        if (!is_null($content)) {
+        if (!is_null($content) && !$response->isInformational() && !in_array($response->getStatusCode(), [204, 304])) {
             $this->assertNotEquals($response->getContent(), $content);
         }
 
@@ -211,27 +236,51 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
     public function testGlobalConfigCachesAllResponses()
     {
         $this->setPackageConfig('global', true);
-        $this->assertRouteResponseCached(null, 3);
+        $this->assertRouteResponseCached(null, null, 3);
     }
 
     public function testGlobalConfigDoesNotCacheAnyResponses()
     {
         $this->setPackageConfig('global', false);
-        $this->assertRouteResponseNotCached(null, 3);
+        $this->assertRouteResponseNotCached(null, null, 3);
+    }
+
+    public function testRouteGroupsCacheResponses()
+    {
+        
+        $router = $this->app['router'];
+        
+        $attributes = [
+            [false, ['cache']],
+            [true, ['no-cache']],
+            [false, ['cache' => true]],
+            [true, ['cache' => false]]
+        ];
+        foreach ($attributes as $attribute) {
+            $this->setPackageConfig('global', $attribute[0]);
+            $router->group($attribute[1], function () use ($attribute) {
+                $route = $this->addRoute();
+                if ($attribute[0]) {
+                    $this->assertRouteResponseNotCached($route);
+                    return;
+                }
+                $this->assertRouteResponseCached($route);
+            });
+        }
     }
 
     public function testOnlyCachesGetRequests()
     {
         $this->setPackageConfig('global', true);
-        $router = $this->app['router'];
-
+        
         foreach (['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'] as $verb) {
             $route = $this->addRoute([], null, $verb);
             if ($verb === 'GET') {
                 $this->assertRouteResponseCached($route);
-            } else {
-                $this->assertRouteResponseNotCached($route);
+                continue;
             }
+            
+            $this->assertRouteResponseNotCached($route);
         }
     }
 
@@ -268,15 +317,16 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         $this->assertRequestsForRoute(
             null,
             null,
+            null,
             [
-                'assertions' => ['assertResponseCachedWithContent']
+                'assertions' => 'assertResponseCachedWithContent'
             ],
             [
                 'headers' => ['Cache-Control' => 'no-cache'],
-                'assertions' => ['assertResponseFresh']
+                'assertions' => 'assertResponseFresh'
             ],
             [
-                'assertions' => ['assertResponseCachedWithContent']
+                'assertions' => 'assertResponseCachedWithContent'
             ]
         );
     }
@@ -287,14 +337,15 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         $this->assertRequestsForRoute(
             null,
             null,
+            null,
             [
-                'assertions' => ['assertResponseCachedWithContent'],
+                'assertions' => 'assertResponseCachedWithContent',
                 'dataCallback' => function ($request, $response) {
                     return $response->headers->get('Last-Modified');
                 }
             ],
             [
-                'assertions' => ['assertResponseCachedWithoutContent'],
+                'assertions' => 'assertResponseCachedWithoutContent',
                 'headers' => [
                     'If-Modified-Since' => function ($lastModified) {
                         return $lastModified;
@@ -303,7 +354,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
                 'dataCallback' => false
             ],
             [
-                'assertions' => ['assertResponseCachedWithoutContent'],
+                'assertions' => 'assertResponseCachedWithoutContent',
                 'headers' => [
                     'If-Modified-Since' => function ($lastModified) {
                         return $lastModified;
@@ -319,5 +370,25 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         $this->app->instance('Wowe\Cache\Response\AfterFilter', Mockery::mock('Wowe\Cache\Response\AfterFilter')->shouldReceive('filter')->never()->getMock());
         $route = $this->addRoute(['before' => 'wowe.response-cache.request', 'after' => 'wowe.response-cache.response']);
         $this->assertRouteResponseNotCached($route);
+    }
+
+    public function testOnlyCachesOkResponse()
+    {
+        $this->setPackageConfig('global', true);
+        
+        foreach (array_keys(Response::$statusTexts) as $statusCode) {
+            $_SERVER['__STATUS_CODE'] = $statusCode;
+            $route = $this->addRoute(function () use ($statusCode) {
+                return ResponseFacade::make($this->generateUniqueHash(), $statusCode);
+            });
+
+            if ($statusCode === 200) {
+                $this->assertRouteResponseCached($route);
+                continue;
+            }
+
+            $this->assertRouteResponseNotCached($route);
+        }
+        unset($_SERVER['__STATUS_CODE']);
     }
 }
