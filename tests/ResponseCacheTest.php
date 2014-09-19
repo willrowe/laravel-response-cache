@@ -8,12 +8,14 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
 {
     private $routeCount = 0;
     private $callCount = 0;
+    private $prefix;
 
     public function setUp()
     {
         parent::setUp();
 
         $this->app['router']->enableFilters();
+        $this->prefix = $this->generateUniqueHash();
     }
 
     public function teardown()
@@ -119,12 +121,12 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
 
     protected function assertRouteResponseCached(Route $route = null, array $parameters = null)
     {
-        call_user_func_array([$this, 'assertRequestsForRoute'], array_merge([$route, ['assertResponseCachedWithContent'], $parameters], array_slice(func_get_args(), 2)));
+        return call_user_func_array([$this, 'assertRequestsForRoute'], array_merge([$route, ['assertResponseCachedWithContent'], $parameters], array_slice(func_get_args(), 2)));
     }
 
     protected function assertRouteResponseNotCached(Route $route = null, array $parameters = null)
     {
-        call_user_func_array([$this, 'assertRequestsForRoute'], array_merge([$route, ['assertResponseNotCached'], $parameters], array_slice(func_get_args(), 2)));
+        return call_user_func_array([$this, 'assertRequestsForRoute'], array_merge([$route, ['assertResponseNotCached'], $parameters], array_slice(func_get_args(), 2)));
     }
 
     protected function assertRequestsForRoute(Route $route = null, array $defaultAssertions = null, array $parameters = null, $numRequests = 2)
@@ -134,6 +136,10 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         }
 
         $data = null;
+        if (isset($parameters[$this->prefix . '_data'])) {
+            $data = array_pull($parameters, $this->prefix . '_data');
+        }
+
         $requests = array_slice(func_get_args(), 3);
         if (is_int($numRequests)) {
             $requests = array_merge($requests, array_fill(0, $numRequests, null));
@@ -145,12 +151,13 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
             
             $request = array_merge([
                 'headers' => [],
-                'assertions' => (array)$defaultAssertions,
+                'assertions' => $defaultAssertions,
                 'dataCallback' => function ($request, $response) {
                     return $response->getContent();
-                }
+                },
+                'parameters' => $parameters
             ], (array)$request);
-            $parsedHeaders = array_map(
+            $request['headers'] = array_map(
                 function ($header) use ($data) {
                     if (is_callable($header)) {
                         return $header($data);
@@ -159,7 +166,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
                 },
                 $request['headers']
             );
-            $response = $this->callRoute($route, $parsedHeaders, $parameters);
+            $response = $this->callRoute($route, $request['headers'], $request['parameters']);
             
             foreach ((array)$request['assertions'] as $assertion) {
                 call_user_func([$this, $assertion], $data);
@@ -169,6 +176,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
                 $data = is_callable($request['dataCallback']) ? $request['dataCallback']($request, $response) : $request['dataCallback'];
             }
         }
+        return $data;
     }
 
     protected function assertRouteResponseCachedFor($life, Route $route = null)
@@ -194,9 +202,9 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
     protected function assertResponseCachedWithoutContent($lastModified = null)
     {
         $response = $this->client->getResponse();
-        $this->assertResponseStatus(304);
-        $this->assertTrue($response->headers->hasCacheControlDirective('public'));
-        $this->assertSame($response->getContent(), '');
+        $this->assertResponseStatus(304, 'The response code was not 304.');
+        $this->assertTrue($response->headers->hasCacheControlDirective('public'), 'The public cache control directive was not found on the response.');
+        $this->assertSame($response->getContent(), '', 'The response content was not empty.');
 
         return $response;
     }
@@ -209,7 +217,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         $this->assertFalse($response->headers->has('Last-Modified'), 'Failed to assert that the last modified header was not present.');
 
         if (!is_null($content) && !$response->isInformational() && !in_array($response->getStatusCode(), [204, 304])) {
-            $this->assertNotEquals($response->getContent(), $content);
+            $this->assertNotSame($response->getContent(), $content, 'The response content was the same as the previous request.');
         }
 
         return $response;
@@ -219,11 +227,11 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
     {
         $response = $this->client->getResponse();
         $this->assertResponseOk();
-        $this->assertTrue($response->headers->hasCacheControlDirective('public'));
-        $this->assertTrue($response->headers->has('Last-Modified'));
+        $this->assertTrue($response->headers->hasCacheControlDirective('public'), 'The public cache control directive was not found.');
+        $this->assertTrue($response->headers->has('Last-Modified'), 'The last modified header was not found.');
 
         if (!is_null($content)) {
-            $this->assertNotEquals($response->getContent(), $content);
+            $this->assertNotSame($response->getContent(), $content, 'The response content was the same as the previous request.');
         }
 
         return $response;
@@ -390,5 +398,83 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
             $this->assertRouteResponseNotCached($route);
         }
         unset($_SERVER['__STATUS_CODE']);
+    }
+
+    public function testNamedRouteWillRemainCachedEvenIfUriChanges()
+    {
+        $this->setPackageConfig('global', true);
+        $route = $this->addRoute(['as' => $this->generateUniqueHash()]);
+        $content = $this->assertRouteResponseCached($route);
+
+        $route->setUri($this->generateUniqueHash());
+        $this->assertRouteResponseCached($route, [$this->prefix . '_data' => $content]);
+    }
+
+    public function testSameRouteWithDifferentParametersWillGenerateDifferentCaches()
+    {
+        $this->setPackageConfig('global', true);
+        $route = $this->addRoute(['as' => $this->generateUniqueHash()], $this->generateUniqueUri() . '/{foo}/bar/{baz}');
+        $hitA = ['foo' => 'qux', 'baz' => 'quux'];
+        $hitB = ['foo' => 'quux', 'baz' => 'qux'];
+
+        $this->assertRequestsForRoute(
+            $route,
+            null,
+            null,
+            [
+                'assertions' => 'assertResponseCachedWithContent',
+                'parameters' => $hitA
+            ],
+            [
+                'assertions' => 'assertResponseCachedWithContent',
+                'parameters' => array_reverse($hitA)
+            ],
+            [
+                'assertions' => 'assertResponseFresh',
+                'parameters' => $hitB
+            ],
+            [
+                'assertions' => 'assertResponseCachedWithContent',
+                'parameters' => array_reverse($hitB)
+            ],
+            [
+                'assertions' => 'assertResponseFresh',
+                'parameters' => $hitA
+            ]
+        );
+    }
+
+    public function testSameRouteWithDifferentQueryStringsWillGenerateDifferentCaches()
+    {
+        $this->setPackageConfig('global', true);
+        $route = $this->addRoute(['as' => $this->generateUniqueHash()]);
+        $hitA = ['foo' => 'qux', 'baz' => 'quux'];
+        $hitB = ['foo' => 'quux', 'baz' => 'qux'];
+
+        $this->assertRequestsForRoute(
+            $route,
+            null,
+            null,
+            [
+                'assertions' => 'assertResponseCachedWithContent',
+                'parameters' => $hitA
+            ],
+            [
+                'assertions' => 'assertResponseCachedWithContent',
+                'parameters' => array_reverse($hitA)
+            ],
+            [
+                'assertions' => 'assertResponseFresh',
+                'parameters' => $hitB
+            ],
+            [
+                'assertions' => 'assertResponseCachedWithContent',
+                'parameters' => array_reverse($hitB)
+            ],
+            [
+                'assertions' => 'assertResponseFresh',
+                'parameters' => $hitA
+            ]
+        );
     }
 }

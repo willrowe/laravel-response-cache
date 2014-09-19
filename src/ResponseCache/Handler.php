@@ -234,8 +234,32 @@ class Handler
      */
     protected function generateCacheKey()
     {
-        $routeHash = md5(is_null($this->route->getName()) ? $this->route->getUri(): $this->route->getName());
+        $routeIdentifier = $this->route->getName() ?: $this->route->getUri();
+        $routeParameters = $this->implodeParameters($this->route->parameters());
+        $queryParameters = $this->implodeParameters($this->request->query());
+
+        $routeHash = md5(implode('|', array_filter([$routeIdentifier, $routeParameters, $queryParameters])));
         $this->cacheKey = implode('.', array_filter([$this->cacheKeyPrefix, $routeHash]));
+    }
+
+    /**
+     * Takes the keys and values and implodes them
+     * Uses the format {$key}:{$value},{$key}:{$value}
+     * Sorts by the key
+     * @param  array $parameters
+     * @return string
+     */
+    protected function implodeParameters(array $parameters)
+    {
+        ksort($parameters);
+        $parameters = array_map(
+            function ($key, $value) {
+                return $key . ':' . $value;
+            },
+            array_keys($parameters),
+            array_values($parameters)
+        );
+        return implode(',', $parameters);
     }
 
     /**
