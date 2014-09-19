@@ -66,6 +66,11 @@ class Handler
      */
     protected static function routeRequestIsCacheable(Application $app, Route $route, Request $request)
     {
+        // Check the config setting
+        if (ServiceProvider::config($app, 'enabled') === false) {
+            return false;
+        }
+
         // HTTP Method
         if (!in_array('GET', $route->methods(), true) || $request->method() !== 'GET') {
             return false;
@@ -294,7 +299,7 @@ class Handler
         if (!self::responseIsCacheable($response)) {
             return $response;
         }
-        list($lastModified, $content) = $this->getCachedResponse($response);
+        list($lastModified, $content) = $this->getResponse($response);
         $response->setContent($content);
         $response->setLastModified($lastModified);
         $response->setPublic();
@@ -318,12 +323,22 @@ class Handler
      * @param \Illuminate\Http\Response $response
      * @return array
      */
-    protected function getCachedResponse(Response $response)
+    protected function getResponse(Response $response)
     {
-        if ($this->responseIsCached()) {
-            return $this->app['cache']->get($this->cacheKey);
+        if (!$this->responseIsCached()) {
+            return $this->cacheResponse($response);
         }
         
+        return $this->app['cache']->get($this->cacheKey);
+    }
+
+    /**
+     * Stores the response in the cache and returns the formatted response.
+     * @param  \Illuminate\Http\Response $response
+     * @return array
+     */
+    protected function cacheResponse(Response $response)
+    {
         $cachedResponse = [Carbon::now(), $response->getContent()];
         $this->app['cache']->put($this->cacheKey, $cachedResponse, $this->cacheLife);
         return $cachedResponse;

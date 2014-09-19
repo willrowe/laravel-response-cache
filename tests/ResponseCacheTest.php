@@ -16,6 +16,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
 
         $this->app['router']->enableFilters();
         $this->prefix = $this->generateUniqueHash();
+        $this->setPackageConfig(['enabled' => true, 'life' => (7 * 24 * 60), 'global' => true]);
     }
 
     public function teardown()
@@ -32,12 +33,17 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
 
     /**
      * Change the package configuration
-     * @param string $settingName
-     * @param mixed $value
+     * @param string|array $setting
+     * @param mixed        $value
      */
-    protected function setPackageConfig($settingName, $value)
+    protected function setPackageConfig($setting, $value = null)
     {
-        $this->app['config']->set('response-cache::config.' . $settingName, $value);
+        if (is_string($setting)) {
+            $setting = [$setting => $value];
+        }
+        foreach ($setting as $name => $value) {
+            $this->app['config']->set('response-cache::config.' . $name, $value);
+        }
     }
 
     /**
@@ -374,6 +380,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
 
     public function testManuallyAddedRouteFiltersDoNotTriggerBeforeOrAfterFilters()
     {
+        $this->setPackageConfig('global', false);
         $this->app->instance('Wowe\Cache\Response\BeforeFilter', Mockery::mock('Wowe\Cache\Response\BeforeFilter')->shouldReceive('filter')->never()->getMock());
         $this->app->instance('Wowe\Cache\Response\AfterFilter', Mockery::mock('Wowe\Cache\Response\AfterFilter')->shouldReceive('filter')->never()->getMock());
         $route = $this->addRoute(['before' => 'wowe.response-cache.request', 'after' => 'wowe.response-cache.response']);
@@ -476,5 +483,33 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
                 'parameters' => $hitA
             ]
         );
+    }
+
+    public function testEnabledConfigSettingAllowsCaching()
+    {
+        $cachedRoute = $this->addRoute(['cache' => true]);
+        $nonCachedRoute = $this->addRoute(['cache' => false]);
+
+        $this->setPackageConfig(['global' => true, 'enabled' => true]);
+        $this->assertRouteResponseCached();
+        $this->assertRouteResponseNotCached($nonCachedRoute);
+
+        $this->setPackageConfig('global', false);
+        $this->assertRouteResponseNotCached();
+        $this->assertRouteResponseCached($cachedRoute);
+    }
+
+    public function testEnabledConfigSettingBlocksCaching()
+    {
+        $cachedRoute = $this->addRoute(['cache' => true]);
+        $nonCachedRoute = $this->addRoute(['cache' => false]);
+
+        $this->setPackageConfig(['global' => true, 'enabled' => false]);
+        $this->assertRouteResponseNotCached();
+        $this->assertRouteResponseNotCached($nonCachedRoute);
+
+        $this->setPackageConfig('global', false);
+        $this->assertRouteResponseNotCached();
+        $this->assertRouteResponseNotCached($cachedRoute);
     }
 }
