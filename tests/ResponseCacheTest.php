@@ -237,7 +237,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         $this->assertTrue($response->headers->has('Last-Modified'), 'The last modified header was not found.');
 
         if (!is_null($content)) {
-            $this->assertNotSame($response->getContent(), $content, 'The response content was the same as the previous request.');
+            $this->assertNotSame($response->getContent(), $content, 'The response content was the same as the previous request. "' . $response->getContent() . '" === "' . $content . '"');
         }
 
         return $response;
