@@ -1,6 +1,9 @@
 {
-    "name": "wowe/route-cache",
-    "description": "",
+    "name": "wowe/laravel-response-cache",
+    "description": "Route response caching for Laravel",
+    "keywords": ["laravel", "cache", "caching", "route", "response"],
+    "homepage": "https://github.com/willrowe/laravel-response-cache",
+    "license": "MIT",
     "authors": [
         {
             "name": "Will Rowe",
@@ -22,6 +25,5 @@
         "psr-4": {
             "Wowe\\Cache\\Response\\": "src/ResponseCache"
         }
-    },
-    "minimum-stability": "stable"
+    }
 }

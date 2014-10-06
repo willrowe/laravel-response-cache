@@ -261,7 +261,6 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
 
     public function testRouteGroupsCacheResponses()
     {
-        
         $router = $this->app['router'];
         
         $attributes = [

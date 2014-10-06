@@ -1,0 +1,5 @@
+{
+    "providers": [
+        "Wowe\\Cache\\Response\\ServiceProvider"
+    ]
+}
