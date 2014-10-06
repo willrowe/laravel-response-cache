@@ -14,6 +14,7 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
     {
         parent::setUp();
 
+        unset($_SERVER['__STATUS_CODE']);
         $this->app['router']->enableFilters();
         $this->prefix = $this->generateUniqueHash();
         $this->setPackageConfig(['enabled' => true, 'life' => (7 * 24 * 60), 'global' => true]);
@@ -403,7 +404,6 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
 
             $this->assertRouteResponseNotCached($route);
         }
-        unset($_SERVER['__STATUS_CODE']);
     }
 
     public function testNamedRouteWillRemainCachedEvenIfUriChanges()
