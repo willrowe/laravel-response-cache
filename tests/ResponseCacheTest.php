@@ -15,6 +15,8 @@ class ResponseCacheTest extends \Orchestra\Testbench\TestCase
         parent::setUp();
 
         unset($_SERVER['__STATUS_CODE']);
+        $this->app['config']->set('cache.driver', 'array');
+        $this->app['config']->set('session.driver', 'array');
         $this->app['router']->enableFilters();
         $this->prefix = $this->generateUniqueHash();
         $this->setPackageConfig(['enabled' => true, 'life' => (7 * 24 * 60), 'global' => true]);
