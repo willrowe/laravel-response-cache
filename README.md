@@ -31,13 +31,13 @@ Configuration
 -------------
 The configuration file may be published to the `config` directory by using the command:
 
-`php artisan config:publish response-cache`
+`php artisan config:publish wowe/laravel-response-cache`
 
 *This is recommended since the configuration file that comes with the installation can be overridden by an update.*
 
 **Available Settings**
 - `enabled` (boolean)
-    + Determines whether this package is turned on. If set to false, no responses will be cached, no matter the other settings. If set to true,caching will function normally. This is useful if you want to turn caching off in specific environments.
+    + Determines whether this package is turned on. If set to false, no responses will be cached, no matter the other settings. If set to true, caching will function normally. This is useful if you want to turn caching off in specific environments.
     + Default: true
 - `life` (integer)
     + The number of minutes to cache the route responses. Only applies to routes which do not have cache life set in their action.
@@ -59,7 +59,7 @@ For projects where you need more control over which route responses are cached y
     + False: if `'cache' => false` is set on the action then the route's response *will not* be cached.
     + Integer: if an integer is set on the action (`'cache' => 90`), then the route's response will be cached for that many minutes.
 - `no-cache`
-    + This is simply a semantic shortcut for `'cache' => false` and should be set as string on the action. *It cannot accept any value and should not appear in the action as a key.*
+    + This is simply a semantic shortcut for `'cache' => false` and should be set as a string on the action. *It cannot accept any value and should not appear in the action as a key.*
 *These actions may be applied to either an individual route or a route group.*
 - __*WARNING: DO NOT use more than one cache action on any single route as it will lead to unexpected behavior.*__
 - __*CURRENT LIMITATION: DO NOT set any cache actions on a route or route group that is nested inside another route group which already has a cache action set. At this time it will not override any parent groups and will break caching.*__
