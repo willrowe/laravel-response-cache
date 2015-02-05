@@ -79,7 +79,7 @@ Route::get('baz', ['FooController@getBaz', 'cache' => 90]);
 // Group
 Route::group(['cache'], function () {
     Route::get('qux', 'FooController@getQux');
-})
+});
 ```
 - Disable Caching
 ```php
@@ -92,7 +92,7 @@ Route::get('bar', ['FooController@getBar', 'cache' => false]);
 // Group
 Route::group(['no-cache'], function () {
     Route::get('qux', 'FooController@getQux');
-})
+});
 ```
 
 Release Notes
